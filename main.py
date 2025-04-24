@@ -9,6 +9,7 @@ from model.model import MeshTransformer
 from utils import joint_filter, Dataset
 from model.data_utils import to_mesh
 from pathlib import Path
+from utils_folder.progress_tracker_client import checkpoint
 # prepare arguments
 parser = argparse.ArgumentParser()
 parser.add_argument('--config', type=str, default='config/BPT-pc-open-8k-8-16.yaml')
@@ -89,7 +90,7 @@ if __name__ == '__main__':
                     filter_kwargs = dict(k=50, p=0.95),
                     return_codes=True,
                 )
-
+            checkpoint("inference_loop")
             coords = []
             try:
                 # decoding codes to coordinates
@@ -105,6 +106,7 @@ if __name__ == '__main__':
                     coords.append(vertices)
             except:
                 coords.append(np.zeros(3, 3))
+            checkpoint("code_decoding")
 
             # convert coordinates to mesh
             for i in range(args.batch_size):
@@ -124,3 +126,4 @@ if __name__ == '__main__':
                     pcd = data['pc_normal'][0].cpu().numpy()
                     point_cloud = trimesh.points.PointCloud(pcd[..., 0:3])
                     point_cloud.export(f'{args.output_path}/{uid}_pc.ply', "ply")
+            checkpoint("mesh_export")

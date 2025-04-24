@@ -17,6 +17,7 @@ from .miche_conditioner import PointConditioner
 from functools import partial
 from tqdm import tqdm
 from .data_utils import discretize
+from utils_folder.progress_tracker_client import checkpoint
 
 # helper functions
 
@@ -211,7 +212,10 @@ class MeshTransformer(Module):
             is_eos_codes = (codes == self.eos_token_id)
 
             if is_eos_codes.any(dim = -1).all():
+                checkpoint("inference_loop", 1)
                 break
+            elif i % 1000 == 0:
+                checkpoint("inference_loop", i / max_seq_len)
 
         # mask out to padding anything after the first eos
 
