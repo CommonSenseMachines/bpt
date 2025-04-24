@@ -54,7 +54,12 @@ if __name__ == '__main__':
 
     # prepare data
     if args.input_dir is not None:
-        input_list = sorted(os.listdir(args.input_dir))
+        if os.path.isfile(args.input_dir):
+            input_list = [args.input_dir]
+            args.input_dir = Path(args.input_dir).parent
+        else:
+            input_list = os.listdir(args.input_dir)
+        input_list = sorted(input_list)
         if args.input_type == 'pc_normal':
             # npy file with shape (n, 6):
             # point_cloud (n, 3) + normal (n, 3)
