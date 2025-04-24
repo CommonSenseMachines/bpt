@@ -27,7 +27,7 @@ class Dataset:
                 cur_data = trimesh.load(input_path, force='mesh')
                 cur_data = apply_normalize(cur_data)
                 mesh_list.append(cur_data)
-                pc_list.append(sample_pc(cur_data, pc_num=4096, with_normal=True))
+                pc_list.append(sample_pc(input_path, pc_num=4096, with_normal=True))
 
             for input_path, cur_data in zip(input_list, pc_list):
                 self.data.append({'pc_normal': cur_data, 'uid': input_path.split('/')[-1].split('.')[0]})

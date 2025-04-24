@@ -8,7 +8,7 @@ from model.serializaiton import BPT_deserialize
 from model.model import MeshTransformer
 from utils import joint_filter, Dataset
 from model.data_utils import to_mesh
-
+from pathlib import Path
 # prepare arguments
 parser = argparse.ArgumentParser()
 parser.add_argument('--config', type=str, default='config/BPT-pc-open-8k-8-16.yaml')
@@ -60,7 +60,7 @@ if __name__ == '__main__':
             input_list = [os.path.join(args.input_dir, x) for x in input_list if x.endswith('.npy')]
         else:
             # mesh file (e.g., obj, ply, glb)
-            input_list = [os.path.join(args.input_dir, x) for x in input_list]
+            input_list = [os.path.join(args.input_dir, x) for x in input_list if not os.path.exists(os.path.join(args.output_path, Path(x).stem + f"_mesh_{args.batch_size - 1}.obj"))]
         dataset = Dataset(args.input_type, input_list)
 
     elif args.input_path is not None:
@@ -71,7 +71,7 @@ if __name__ == '__main__':
 
     dataloader = torch.utils.data.DataLoader(
         dataset,
-        batch_size=args.batch_size,
+        batch_size=1,
         drop_last = False,
         shuffle = False,
     )
@@ -84,7 +84,7 @@ if __name__ == '__main__':
                 codes = model.generate(
                     batch_size = args.batch_size,
                     temperature = args.temperature,
-                    pc = data['pc_normal'].cuda().half(),
+                    pc = data['pc_normal'].cuda().half().repeat(args.batch_size,1,1),
                     filter_logits_fn = joint_filter,
                     filter_kwargs = dict(k=50, p=0.95),
                     return_codes=True,
@@ -108,7 +108,7 @@ if __name__ == '__main__':
 
             # convert coordinates to mesh
             for i in range(args.batch_size):
-                uid = data['uid'][i]
+                uid = data['uid'][0]
                 vertices = coords[i]
                 faces = torch.arange(1, len(vertices) + 1).view(-1, 3)
                 mesh = to_mesh(vertices, faces, transpose=False, post_process=True)
@@ -117,10 +117,10 @@ if __name__ == '__main__':
                 face_color = np.array([120, 154, 192, 255], dtype=np.uint8)
                 face_colors = np.tile(face_color, (num_faces, 1))
                 mesh.visual.face_colors = face_colors
-                mesh.export(f'{args.output_path}/{uid}_mesh.obj')
+                mesh.export(f'{args.output_path}/{uid}_mesh_{i}.obj')
 
                 # save pc
                 if args.condition == 'pc':
-                    pcd = data['pc_normal'][i].cpu().numpy()
+                    pcd = data['pc_normal'][0].cpu().numpy()
                     point_cloud = trimesh.points.PointCloud(pcd[..., 0:3])
                     point_cloud.export(f'{args.output_path}/{uid}_pc.ply', "ply")
