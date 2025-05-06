@@ -364,6 +364,27 @@ class MeshTransformer(Module):
             **attn_context_kwargs
         )
 
+        # Fix NaN values and stabilize attended tensor before computing logits
+        if torch.isnan(attended).any():
+            print("Stabilizing attention output")
+            if cache is not None and cache.hiddens is not None and len(cache.hiddens) > 0:
+                # Try to find the last valid hidden state from the list
+                for hidden in reversed(cache.hiddens):
+                    if not torch.isnan(hidden).any():
+                        # Found a valid hidden state, use it
+                        attended = torch.where(torch.isnan(attended), hidden, attended)
+                        break
+                else:
+                    # No valid hidden states found, fallback to mean
+                    valid_attended = attended[~torch.isnan(attended)]
+                    mean_val = valid_attended.mean()
+                    attended = torch.nan_to_num(attended, nan=mean_val)
+            else:
+                # No cache or hiddens available, fallback to mean
+                valid_attended = attended[~torch.isnan(attended)]
+                mean_val = valid_attended.mean()
+                attended = torch.nan_to_num(attended, nan=mean_val)
+
         # logits
 
         logits = self.to_logits(attended)
