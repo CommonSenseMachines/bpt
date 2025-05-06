@@ -46,7 +46,7 @@ if __name__ == '__main__':
     )
     model.load(args.model_path)
     model = model.eval()
-    model = model.half()
+    model = model #.half()
     model = model.cuda()
     num_params = sum([param.nelement() for param in model.decoder.parameters()])
     print('Number of parameters: %.2f M' % (num_params / 1e6))
@@ -90,7 +90,7 @@ if __name__ == '__main__':
                 codes = model.generate(
                     batch_size = args.batch_size,
                     temperature = args.temperature,
-                    pc = data['pc_normal'].cuda().half().repeat(args.batch_size,1,1),
+                    pc = data['pc_normal'].cuda().repeat(args.batch_size,1,1),
                     filter_logits_fn = joint_filter,
                     filter_kwargs = dict(k=50, p=0.95),
                     return_codes=True,
