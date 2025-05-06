@@ -203,7 +203,22 @@ class MeshTransformer(Module):
             # sample code from logits
             logits = logits[:, -1]
             filtered_logits = filter_logits_fn(logits, **filter_kwargs)
-            probs = F.softmax(filtered_logits / temperature, dim = -1)
+            
+            # More numerically stable softmax with additional safeguards
+            filtered_logits = filtered_logits / temperature
+            filtered_logits = filtered_logits - filtered_logits.max(dim=-1, keepdim=True)[0]
+            
+            # Add numerical stability checks
+            filtered_logits = torch.clamp(filtered_logits, min=-100, max=100)  # Prevent extreme values
+            probs = F.softmax(filtered_logits, dim=-1)
+            
+            # Ensure valid probabilities
+            probs = probs + 1e-6  # Add small epsilon to prevent zeros
+            probs = probs / probs.sum(dim=-1, keepdim=True)  # Renormalize
+            
+            # Handle any remaining numerical instabilities
+            probs = torch.nan_to_num(probs, nan=1e-6, posinf=1e-6, neginf=1e-6)
+            
             sample = torch.multinomial(probs, 1)
             codes, _ = pack([codes, sample], 'b *')
 
