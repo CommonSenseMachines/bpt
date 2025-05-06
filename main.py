@@ -95,7 +95,6 @@ if __name__ == '__main__':
                     filter_kwargs = dict(k=50, p=0.95),
                     return_codes=True,
                 )
-            checkpoint("inference_loop")
             coords = []
             try:
                 # decoding codes to coordinates
