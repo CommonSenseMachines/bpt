@@ -55,7 +55,7 @@ if __name__ == '__main__':
     # prepare data
     if args.input_dir is not None:
         if os.path.isfile(args.input_dir):
-            input_list = [args.input_dir]
+            input_list = [Path(args.input_dir).name]
             args.input_dir = Path(args.input_dir).parent
         else:
             input_list = os.listdir(args.input_dir)
@@ -120,9 +120,9 @@ if __name__ == '__main__':
                 mesh = to_mesh(vertices, faces, transpose=False, post_process=True)
                 num_faces = len(mesh.faces)
                 # set the color for mesh
-                face_color = np.array([120, 154, 192, 255], dtype=np.uint8)
-                face_colors = np.tile(face_color, (num_faces, 1))
-                mesh.visual.face_colors = face_colors
+                # face_color = np.array([120, 154, 192, 255], dtype=np.uint8)
+                # face_colors = np.tile(face_color, (num_faces, 1))
+                # mesh.visual.face_colors = face_colors
                 mesh.export(f'{args.output_path}/{uid}_mesh_{i}.obj')
 
                 # save pc
