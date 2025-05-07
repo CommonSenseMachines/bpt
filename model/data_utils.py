@@ -6,7 +6,34 @@ import numpy as np
 from six.moves import range
 import trimesh
 from scipy.spatial.transform import Rotation
+import pymeshlab as pml
+import tempfile
 
+def pymeshlab2trimesh(mesh: pml.MeshSet) -> trimesh.Trimesh:
+    with tempfile.NamedTemporaryFile(suffix='.ply', delete=True) as temp_file:
+        mesh.save_current_mesh(temp_file.name)
+        mesh = trimesh.load(temp_file.name)
+    
+    if isinstance(mesh, trimesh.Scene):
+        combined_mesh = trimesh.Trimesh()
+        for geom in mesh.geometry.values():
+            combined_mesh = trimesh.util.concatenate([combined_mesh, geom])
+        mesh = combined_mesh
+    return mesh
+
+def trimesh2pymeshlab(mesh: trimesh.Trimesh) -> pml.MeshSet:
+    with tempfile.NamedTemporaryFile(suffix='.ply', delete=True) as temp_file:
+        if isinstance(mesh, trimesh.scene.Scene):
+            for idx, obj in enumerate(mesh.geometry.values()):
+                if idx == 0:
+                    temp_mesh = obj
+                else:
+                    temp_mesh = temp_mesh + obj
+            mesh = temp_mesh
+        mesh.export(temp_file.name)
+        mesh = pml.MeshSet()
+        mesh.load_new_mesh(temp_file.name)
+    return mesh
 
 def to_mesh(vertices, faces, transpose=True, post_process=False):
     if transpose:
@@ -20,6 +47,15 @@ def to_mesh(vertices, faces, transpose=True, post_process=False):
         mesh.merge_vertices()
         mesh.update_faces(mesh.unique_faces())
         mesh.fix_normals()
+
+        pymeshlab_mesh = trimesh2pymeshlab(mesh)
+        pymeshlab_mesh.meshing_repair_non_manifold_edges()
+        pymeshlab_mesh.meshing_repair_non_manifold_vertices()
+        pymeshlab_mesh.meshing_remove_connected_component_by_diameter()
+        pymeshlab_mesh.meshing_close_holes(newfaceselected=False)
+
+        mesh = pymeshlab2trimesh(pymeshlab_mesh)
+
     return mesh
 
 
