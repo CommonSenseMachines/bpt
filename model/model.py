@@ -216,8 +216,8 @@ class MeshTransformer(Module):
             if is_eos_codes.any(dim = -1).all():
                 checkpoint("inference_loop", 1)
                 break
-            elif i != 0 and i % 1000 == 0:
-                checkpoint("inference_loop", i / max_seq_len)
+            # elif i != 0 and i % 1000 == 0:
+            #     checkpoint("inference_loop", i / max_seq_len)
 
         # mask out to padding anything after the first eos
 
