@@ -10,6 +10,8 @@ class Dataset:
     def __init__(self, input_type, input_list):
         super().__init__()
         self.data = []
+        self.normalization_params = {}  # Store normalization parameters for each uid
+        
         if input_type == 'pc_normal':
             for input_path in input_list:
                 # load npy
@@ -25,9 +27,11 @@ class Dataset:
             for input_path in input_list:
                 # sample point cloud and normal from mesh
                 cur_data = trimesh.load(input_path, force='mesh')
-                cur_data = apply_normalize(cur_data)
+                cur_data, norm_params = apply_normalize(cur_data, return_params=True)
+                uid = input_path.split('/')[-1].split('.')[0]
+                self.normalization_params[uid] = norm_params
                 mesh_list.append(cur_data)
-                pc_list.append(sample_pc(input_path, pc_num=4096, with_normal=True))
+                pc_list.append(sample_pc_from_mesh(cur_data, pc_num=4096, with_normal=True))
 
             for input_path, cur_data in zip(input_list, pc_list):
                 self.data.append({'pc_normal': cur_data, 'uid': input_path.split('/')[-1].split('.')[0]})
@@ -44,6 +48,19 @@ class Dataset:
 
         return data_dict
     
+    def get_normalization_params(self, uid):
+        """Get normalization parameters for a specific uid"""
+        return self.normalization_params.get(uid, None)
+    
+    def denormalize_mesh(self, mesh, uid):
+        """Denormalize a mesh using the stored normalization parameters"""
+        norm_params = self.get_normalization_params(uid)
+        if norm_params is None:
+            print(f"Warning: No normalization parameters found for uid {uid}")
+            return mesh
+        
+        return apply_denormalize(mesh, norm_params)
+
 
 def joint_filter(logits, k = 50, p=0.95):
     logits = top_k(logits, k = k)
@@ -51,7 +68,7 @@ def joint_filter(logits, k = 50, p=0.95):
     return logits
 
 
-def apply_normalize(mesh):
+def apply_normalize(mesh, return_params=False):
     '''
     normalize mesh to [-1, 1]
     '''
@@ -62,8 +79,47 @@ def apply_normalize(mesh):
     mesh.apply_translation(-center)
     mesh.apply_scale(1 / scale * 2 * 0.95)
 
+    if return_params:
+        # Return the normalization parameters needed to undo the transformation
+        norm_params = {
+            'center': center,
+            'scale': scale,
+            'normalize_scale': 1 / scale * 2 * 0.95
+        }
+        return mesh, norm_params
+    
     return mesh
 
+
+def apply_denormalize(mesh, norm_params):
+    '''
+    Undo the normalization using the stored parameters
+    '''
+    # Undo the scaling
+    mesh.apply_scale(1 / norm_params['normalize_scale'])
+    # Undo the translation
+    mesh.apply_translation(norm_params['center'])
+    
+    return mesh
+
+
+def sample_pc_from_mesh(mesh, pc_num, with_normal=False):
+    """
+    Sample point cloud from an already loaded and normalized mesh
+    """
+    if not with_normal:
+        points, _ = mesh.sample(pc_num, return_index=True)
+        return points
+
+    points, face_idx = mesh.sample(50000, return_index=True)
+    normals = mesh.face_normals[face_idx]
+    pc_normal = np.concatenate([points, normals], axis=-1, dtype=np.float16)
+
+    # random sample point cloud
+    ind = np.random.choice(pc_normal.shape[0], pc_num, replace=False)
+    pc_normal = pc_normal[ind]
+    
+    return pc_normal
 
 
 def sample_pc(mesh_path, pc_num, with_normal=False):
