@@ -118,6 +118,11 @@ if __name__ == '__main__':
                 vertices = coords[i]
                 faces = torch.arange(1, len(vertices) + 1).view(-1, 3)
                 mesh = to_mesh(vertices, faces, transpose=False, post_process=True)
+                
+                # Apply denormalization to restore original dimensions
+                if args.input_type == 'mesh':
+                    mesh = dataset.denormalize_mesh(mesh, uid)
+                
                 num_faces = len(mesh.faces)
                 # set the color for mesh
                 # face_color = np.array([120, 154, 192, 255], dtype=np.uint8)
