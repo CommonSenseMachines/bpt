@@ -183,7 +183,7 @@ class MeshTransformer(Module):
 
         # predict tokens auto-regressively
         for i in tqdm(range(curr_length, max_seq_len), position=tqdm_position, 
-                      desc=f'Process: {tqdm_position}', dynamic_ncols=True, leave=False):
+                      desc=f'Process: {tqdm_position}', dynamic_ncols=True, leave=True):
 
             output = self.forward_on_codes(
                 codes,
