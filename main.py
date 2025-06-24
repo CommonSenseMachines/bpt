@@ -78,7 +78,7 @@ if __name__ == '__main__':
             input_list = [os.path.join(args.input_dir, x) for x in input_list if x.endswith('.npy')]
         else:
             # mesh file (e.g., obj, ply, glb)
-            input_list = [os.path.join(args.input_dir, x) for x in input_list if not os.path.exists(os.path.join(args.output_path, Path(x).stem + f"_mesh_{args.batch_size - 1}.obj"))]
+            input_list = [os.path.join(args.input_dir, x) for x in input_list if not (os.path.exists(os.path.join(args.output_path, Path(x).stem + f"_mesh_{args.batch_size - 1}.glb")) or os.path.exists(os.path.join(args.output_path, Path(x).stem + f"_mesh_{args.batch_size - 1}.obj")))]
         dataset = Dataset(args.input_type, input_list, args.run_parts)
 
     elif args.input_path is not None:
@@ -155,32 +155,34 @@ if __name__ == '__main__':
                         geometry_id = uid.split('_geometry_')[1] if '_geometry_' in uid else "single"
                         mesh_groups[group_key].append((mesh, geometry_id, uid))
                 
-                # Combine and export grouped meshes with preserved geometry IDs
+                # Combine and export grouped meshes as both GLB and OBJ with preserved geometry IDs
                 for group_key, mesh_data_list in mesh_groups.items():
                     # Extract base_uid and var_idx from group_key
                     base_uid = group_key.rsplit('_var_', 1)[0]
                     var_idx = group_key.rsplit('_var_', 1)[1]
                     
-                    output_path = f'{args.output_path}/{base_uid}_mesh_{var_idx}.obj'
+                    output_path_glb = f'{args.output_path}/{base_uid}_mesh_{var_idx}.glb'
+                    output_path_obj = f'{args.output_path}/{base_uid}_mesh_{var_idx}.obj'
                     
                     if len(mesh_data_list) == 1:
-                        # Single mesh, export with object name
+                        # Single mesh, export directly
                         mesh, geometry_id, original_uid = mesh_data_list[0]
-                        with open(output_path, 'w') as f:
-                            f.write(f"# Combined mesh from original file: {base_uid}\n")
-                            f.write(f"# Original part ID: {original_uid}\n\n")
-                            f.write(f"o geometry_{geometry_id}\n")
-                            
-                            # Write vertices
-                            for vertex in mesh.vertices:
-                                f.write(f"v {vertex[0]} {vertex[1]} {vertex[2]}\n")
-                            
-                            # Write faces (OBJ format uses 1-based indexing)
-                            for face in mesh.faces:
-                                f.write(f"f {face[0]+1} {face[1]+1} {face[2]+1}\n")
+                        mesh.export(output_path_glb)
+                        mesh.export(output_path_obj)
                     else:
-                        # Multiple meshes, combine them with object names
-                        with open(output_path, 'w') as f:
+                        # Multiple meshes, create scene with named geometries for GLB
+                        scene = trimesh.Scene()
+                        
+                        for mesh, geometry_id, original_uid in mesh_data_list:
+                            # Add each mesh as a named geometry in the scene
+                            geometry_name = f"geometry_{geometry_id}"
+                            scene.add_geometry(mesh, node_name=geometry_name)
+                        
+                        # Export scene as GLB (preserves individual parts)
+                        scene.export(output_path_glb)
+                        
+                        # Create combined OBJ with proper object naming
+                        with open(output_path_obj, 'w') as f:
                             f.write(f"# Combined mesh from original file: {base_uid}\n")
                             f.write(f"# Contains {len(mesh_data_list)} geometry parts\n\n")
                             
@@ -225,6 +227,7 @@ if __name__ == '__main__':
                         if args.input_type == 'mesh':
                             mesh = dataset.denormalize_mesh(mesh, uid)
                         
+                        mesh.export(f'{args.output_path}/{uid}_mesh_{var_idx}.glb')
                         mesh.export(f'{args.output_path}/{uid}_mesh_{var_idx}.obj')
 
                         # save pc
