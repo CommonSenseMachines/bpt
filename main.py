@@ -128,29 +128,110 @@ if __name__ == '__main__':
             checkpoint("code_decoding")
 
             # convert coordinates to mesh
-            for var_idx in range(args.num_variations):
-                for batch_idx in range(args.batch_size):
-                    uid = data['uid'][batch_idx]
-                    vertices = coords[args.batch_size * var_idx + batch_idx]
-                    faces = torch.arange(1, len(vertices) + 1).view(-1, 3)
-                    mesh = to_mesh(vertices, faces, transpose=False, post_process=True)
+            if args.run_parts:
+                # Group meshes by original filename when run_parts is True
+                mesh_groups = {}
+                for var_idx in range(args.num_variations):
+                    for batch_idx in range(args.batch_size):
+                        uid = data['uid'][batch_idx]
+                        vertices = coords[args.batch_size * var_idx + batch_idx]
+                        faces = torch.arange(1, len(vertices) + 1).view(-1, 3)
+                        mesh = to_mesh(vertices, faces, transpose=False, post_process=True)
+                        
+                        # Apply denormalization to restore original dimensions
+                        if args.input_type == 'mesh':
+                            mesh = dataset.denormalize_mesh(mesh, uid)
+                        
+                        # Extract base filename from uid (remove geometry part)
+                        base_uid = uid.split('_geometry_')[0] if '_geometry_' in uid else uid
+                        
+                        # Create mesh group key
+                        group_key = f"{base_uid}_var_{var_idx}"
+                        
+                        if group_key not in mesh_groups:
+                            mesh_groups[group_key] = []
+                        
+                        # Store mesh with its original geometry ID
+                        geometry_id = uid.split('_geometry_')[1] if '_geometry_' in uid else "single"
+                        mesh_groups[group_key].append((mesh, geometry_id, uid))
+                
+                # Combine and export grouped meshes with preserved geometry IDs
+                for group_key, mesh_data_list in mesh_groups.items():
+                    # Extract base_uid and var_idx from group_key
+                    base_uid = group_key.rsplit('_var_', 1)[0]
+                    var_idx = group_key.rsplit('_var_', 1)[1]
                     
-                    # Apply denormalization to restore original dimensions
-                    if args.input_type == 'mesh':
-                        mesh = dataset.denormalize_mesh(mesh, uid)
+                    output_path = f'{args.output_path}/{base_uid}_mesh_{var_idx}.obj'
                     
-                    num_faces = len(mesh.faces)
-                    # set the color for mesh
-                    # face_color = np.array([120, 154, 192, 255], dtype=np.uint8)
-                    # face_colors = np.tile(face_color, (num_faces, 1))
-                    # mesh.visual.face_colors = face_colors
-                    mesh.export(f'{args.output_path}/{uid}_mesh_{var_idx}.obj')
+                    if len(mesh_data_list) == 1:
+                        # Single mesh, export with object name
+                        mesh, geometry_id, original_uid = mesh_data_list[0]
+                        with open(output_path, 'w') as f:
+                            f.write(f"# Combined mesh from original file: {base_uid}\n")
+                            f.write(f"# Original part ID: {original_uid}\n\n")
+                            f.write(f"o geometry_{geometry_id}\n")
+                            
+                            # Write vertices
+                            for vertex in mesh.vertices:
+                                f.write(f"v {vertex[0]} {vertex[1]} {vertex[2]}\n")
+                            
+                            # Write faces (OBJ format uses 1-based indexing)
+                            for face in mesh.faces:
+                                f.write(f"f {face[0]+1} {face[1]+1} {face[2]+1}\n")
+                    else:
+                        # Multiple meshes, combine them with object names
+                        with open(output_path, 'w') as f:
+                            f.write(f"# Combined mesh from original file: {base_uid}\n")
+                            f.write(f"# Contains {len(mesh_data_list)} geometry parts\n\n")
+                            
+                            vertex_offset = 0
+                            for mesh, geometry_id, original_uid in mesh_data_list:
+                                f.write(f"# Original part ID: {original_uid}\n")
+                                f.write(f"o geometry_{geometry_id}\n")
+                                
+                                # Write vertices for this part
+                                for vertex in mesh.vertices:
+                                    f.write(f"v {vertex[0]} {vertex[1]} {vertex[2]}\n")
+                                
+                                # Write faces for this part (adjust indices by vertex offset)
+                                for face in mesh.faces:
+                                    f.write(f"f {face[0]+1+vertex_offset} {face[1]+1+vertex_offset} {face[2]+1+vertex_offset}\n")
+                                
+                                vertex_offset += len(mesh.vertices)
+                                f.write("\n")
+                
+                # Save point clouds (only once per original file)
+                if args.condition == 'pc':
+                    saved_base_uids = set()
+                    for batch_idx in range(args.batch_size):
+                        uid = data['uid'][batch_idx]
+                        base_uid = uid.split('_geometry_')[0] if '_geometry_' in uid else uid
+                        
+                        if base_uid not in saved_base_uids:
+                            pcd = data['pc_normal'][batch_idx].cpu().numpy()
+                            point_cloud = trimesh.points.PointCloud(pcd[..., 0:3])
+                            point_cloud.export(f'{args.output_path}/{base_uid}_pc.ply', "ply")
+                            saved_base_uids.add(base_uid)
+            else:
+                # Original logic for when run_parts is False
+                for var_idx in range(args.num_variations):
+                    for batch_idx in range(args.batch_size):
+                        uid = data['uid'][batch_idx]
+                        vertices = coords[args.batch_size * var_idx + batch_idx]
+                        faces = torch.arange(1, len(vertices) + 1).view(-1, 3)
+                        mesh = to_mesh(vertices, faces, transpose=False, post_process=True)
+                        
+                        # Apply denormalization to restore original dimensions
+                        if args.input_type == 'mesh':
+                            mesh = dataset.denormalize_mesh(mesh, uid)
+                        
+                        mesh.export(f'{args.output_path}/{uid}_mesh_{var_idx}.obj')
 
-                    # save pc
-                    if args.condition == 'pc':
-                        pcd = data['pc_normal'][0].cpu().numpy()
-                        point_cloud = trimesh.points.PointCloud(pcd[..., 0:3])
-                        point_cloud.export(f'{args.output_path}/{uid}_pc.ply', "ply")
+                        # save pc
+                        if args.condition == 'pc':
+                            pcd = data['pc_normal'][batch_idx].cpu().numpy()
+                            point_cloud = trimesh.points.PointCloud(pcd[..., 0:3])
+                            point_cloud.export(f'{args.output_path}/{uid}_pc.ply', "ply")
             checkpoint("mesh_export")
     
     # Log maximum VRAM usage at the end
