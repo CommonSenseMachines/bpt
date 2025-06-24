@@ -20,7 +20,7 @@ parser.add_argument('--input_path', default=None, type=str)
 parser.add_argument('--out_dir', default="output", type=str)
 parser.add_argument('--input_type', choices=['mesh','pc_normal'], default='mesh')
 parser.add_argument('--output_path', type=str, default='output')
-parser.add_argument('--batch_size', type=int, default=1)
+parser.add_argument('--batch_size', type=int, default=-1)
 parser.add_argument('--num_variations', type=int, default=1)
 parser.add_argument('--run_parts', type=bool, default=False)
 parser.add_argument('--temperature', type=float, default=0.5)  # key sampling parameter
@@ -86,6 +86,9 @@ if __name__ == '__main__':
 
     else:
         raise ValueError("input_dir or input_path must be provided.")
+    
+    if args.batch_size == -1:
+        args.batch_size = len(dataset)
 
     dataloader = torch.utils.data.DataLoader(
         dataset,
