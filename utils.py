@@ -1,5 +1,6 @@
 import trimesh
 import numpy as np
+import subprocess
 from x_transformers.autoregressive_wrapper import top_p, top_k
 
 
@@ -34,16 +35,17 @@ class Dataset:
                     for geom_name, geom in cur_data.geometry.items():
                         if isinstance(geom, trimesh.Trimesh):  # Make sure it's a mesh
                             geom, norm_params = apply_normalize(geom, return_params=True)
+                            main_uid = input_path.split('/')[-1].split('.')[0]
                             uid = f"{input_path.split('/')[-1].split('.')[0]}_{geom_name}"
                             self.normalization_params[uid] = norm_params
                             pc_data = sample_pc_from_mesh(geom, pc_num=4096, with_normal=True)
-                            self.data.append({'pc_normal': pc_data, 'uid': uid})
+                            self.data.append({'pc_normal': pc_data, 'uid': uid, 'main_uid': main_uid})
                 else:  # It's a single mesh
                     cur_data, norm_params = apply_normalize(cur_data, return_params=True)
                     uid = input_path.split('/')[-1].split('.')[0]
                     self.normalization_params[uid] = norm_params
                     pc_data = sample_pc_from_mesh(cur_data, pc_num=4096, with_normal=True)
-                    self.data.append({'pc_normal': pc_data, 'uid': uid})
+                    self.data.append({'pc_normal': pc_data, 'uid': uid, 'main_uid': uid})
                 
         print(f"dataset total data samples: {len(self.data)}")
 
@@ -54,6 +56,7 @@ class Dataset:
         data_dict = {}
         data_dict['pc_normal'] = self.data[idx]['pc_normal']
         data_dict['uid'] = self.data[idx]['uid']
+        data_dict['main_uid'] = self.data[idx]['main_uid']
 
         return data_dict
     

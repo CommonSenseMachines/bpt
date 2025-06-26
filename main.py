@@ -134,6 +134,7 @@ if __name__ == '__main__':
                 for var_idx in range(args.num_variations):
                     for batch_idx in range(args.batch_size):
                         uid = data['uid'][batch_idx]
+                        main_uid = data['main_uid'][batch_idx]
                         vertices = coords[args.batch_size * var_idx + batch_idx]
                         faces = torch.arange(1, len(vertices) + 1).view(-1, 3)
                         mesh = to_mesh(vertices, faces, transpose=False, post_process=True)
@@ -143,7 +144,7 @@ if __name__ == '__main__':
                             mesh = dataset.denormalize_mesh(mesh, uid)
                         
                         # Extract base filename from uid (remove geometry part)
-                        base_uid = uid.split('_geometry_')[0] if '_geometry_' in uid else uid
+                        base_uid = main_uid
                         
                         # Create mesh group key
                         group_key = f"{base_uid}_var_{var_idx}"
@@ -152,8 +153,8 @@ if __name__ == '__main__':
                             mesh_groups[group_key] = []
                         
                         # Store mesh with its original geometry ID
-                        geometry_id = uid.split('_geometry_')[1] if '_geometry_' in uid else "single"
-                        mesh_groups[group_key].append((mesh, geometry_id, uid))
+                        part_id = uid.replace(main_uid + "_", '') if uid != main_uid else ''
+                        mesh_groups[group_key].append((mesh, part_id, uid))
                 
                 # Combine and export grouped meshes as both GLB and OBJ with preserved geometry IDs
                 for group_key, mesh_data_list in mesh_groups.items():
@@ -166,16 +167,16 @@ if __name__ == '__main__':
                     
                     if len(mesh_data_list) == 1:
                         # Single mesh, export directly
-                        mesh, geometry_id, original_uid = mesh_data_list[0]
+                        mesh, part_id, original_uid = mesh_data_list[0]
                         mesh.export(output_path_glb)
                         mesh.export(output_path_obj)
                     else:
                         # Multiple meshes, create scene with named geometries for GLB
                         scene = trimesh.Scene()
                         
-                        for mesh, geometry_id, original_uid in mesh_data_list:
+                        for mesh, part_id, original_uid in mesh_data_list:
                             # Add each mesh as a named geometry in the scene
-                            geometry_name = f"geometry_{geometry_id}"
+                            geometry_name = part_id
                             scene.add_geometry(mesh, node_name=geometry_name)
                         
                         # Export scene as GLB (preserves individual parts)
@@ -187,9 +188,9 @@ if __name__ == '__main__':
                             f.write(f"# Contains {len(mesh_data_list)} geometry parts\n\n")
                             
                             vertex_offset = 0
-                            for mesh, geometry_id, original_uid in mesh_data_list:
+                            for mesh, part_id, original_uid in mesh_data_list:
                                 f.write(f"# Original part ID: {original_uid}\n")
-                                f.write(f"o geometry_{geometry_id}\n")
+                                f.write(f"o {part_id}\n")
                                 
                                 # Write vertices for this part
                                 for vertex in mesh.vertices:
@@ -202,18 +203,18 @@ if __name__ == '__main__':
                                 vertex_offset += len(mesh.vertices)
                                 f.write("\n")
                 
-                # Save point clouds (only once per original file)
-                if args.condition == 'pc':
-                    saved_base_uids = set()
-                    for batch_idx in range(args.batch_size):
-                        uid = data['uid'][batch_idx]
-                        base_uid = uid.split('_geometry_')[0] if '_geometry_' in uid else uid
+                # # Save point clouds (only once per original file)
+                # if args.condition == 'pc':
+                #     saved_base_uids = set()
+                #     for batch_idx in range(args.batch_size):
+                #         uid = data['uid'][batch_idx]
+                #         base_uid = uid.split('_geometry_')[0] if '_geometry_' in uid else uid
                         
-                        if base_uid not in saved_base_uids:
-                            pcd = data['pc_normal'][batch_idx].cpu().numpy()
-                            point_cloud = trimesh.points.PointCloud(pcd[..., 0:3])
-                            point_cloud.export(f'{args.output_path}/{base_uid}_pc.ply', "ply")
-                            saved_base_uids.add(base_uid)
+                #         if base_uid not in saved_base_uids:
+                #             pcd = data['pc_normal'][batch_idx].cpu().numpy()
+                #             point_cloud = trimesh.points.PointCloud(pcd[..., 0:3])
+                #             point_cloud.export(f'{args.output_path}/{base_uid}_pc.ply', "ply")
+                #             saved_base_uids.add(base_uid)
             else:
                 # Original logic for when run_parts is False
                 for var_idx in range(args.num_variations):
