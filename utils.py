@@ -1,5 +1,6 @@
 import trimesh
 import numpy as np
+import subprocess
 from x_transformers.autoregressive_wrapper import top_p, top_k
 
 
@@ -7,7 +8,7 @@ class Dataset:
     '''
     A toy dataset for inference
     '''
-    def __init__(self, input_type, input_list):
+    def __init__(self, input_type, input_list, run_parts):
         super().__init__()
         self.data = []
         self.normalization_params = {}  # Store normalization parameters for each uid
@@ -23,18 +24,28 @@ class Dataset:
                 self.data.append({'pc_normal': cur_data, 'uid': input_path.split('/')[-1].split('.')[0]})
 
         elif input_type == 'mesh':
-            mesh_list, pc_list = [], []
             for input_path in input_list:
                 # sample point cloud and normal from mesh
-                cur_data = trimesh.load(input_path, force='mesh')
-                cur_data, norm_params = apply_normalize(cur_data, return_params=True)
-                uid = input_path.split('/')[-1].split('.')[0]
-                self.normalization_params[uid] = norm_params
-                mesh_list.append(cur_data)
-                pc_list.append(sample_pc_from_mesh(cur_data, pc_num=4096, with_normal=True))
-
-            for input_path, cur_data in zip(input_list, pc_list):
-                self.data.append({'pc_normal': cur_data, 'uid': input_path.split('/')[-1].split('.')[0]})
+                if run_parts:
+                    cur_data = trimesh.load(input_path)
+                else:
+                    cur_data = trimesh.load(input_path, force='mesh')
+                
+                if hasattr(cur_data, 'geometry'):  # It's a Scene with multiple geometries
+                    for geom_name, geom in cur_data.geometry.items():
+                        if isinstance(geom, trimesh.Trimesh):  # Make sure it's a mesh
+                            geom, norm_params = apply_normalize(geom, return_params=True)
+                            main_uid = input_path.split('/')[-1].split('.')[0]
+                            uid = f"{input_path.split('/')[-1].split('.')[0]}_{geom_name}"
+                            self.normalization_params[uid] = norm_params
+                            pc_data = sample_pc_from_mesh(geom, pc_num=4096, with_normal=True)
+                            self.data.append({'pc_normal': pc_data, 'uid': uid, 'main_uid': main_uid})
+                else:  # It's a single mesh
+                    cur_data, norm_params = apply_normalize(cur_data, return_params=True)
+                    uid = input_path.split('/')[-1].split('.')[0]
+                    self.normalization_params[uid] = norm_params
+                    pc_data = sample_pc_from_mesh(cur_data, pc_num=4096, with_normal=True)
+                    self.data.append({'pc_normal': pc_data, 'uid': uid, 'main_uid': uid})
                 
         print(f"dataset total data samples: {len(self.data)}")
 
@@ -45,6 +56,7 @@ class Dataset:
         data_dict = {}
         data_dict['pc_normal'] = self.data[idx]['pc_normal']
         data_dict['uid'] = self.data[idx]['uid']
+        data_dict['main_uid'] = self.data[idx]['main_uid']
 
         return data_dict
     
