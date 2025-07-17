@@ -156,22 +156,10 @@ if __name__ == '__main__':
                         # Store mesh with its original geometry ID
                         part_id = uid.replace(main_uid + "_", '') if uid != main_uid else ''
                         mesh_groups[group_key].append((mesh, part_id, uid))
-                
-                # # Save point clouds (only once per original file)
-                # if args.condition == 'pc':
-                #     saved_base_uids = set()
-                #     for batch_idx in range(args.batch_size):
-                #         uid = data['uid'][batch_idx]
-                #         base_uid = uid.split('_geometry_')[0] if '_geometry_' in uid else uid
-                        
-                #         if base_uid not in saved_base_uids:
-                #             pcd = data['pc_normal'][batch_idx].cpu().numpy()
-                #             point_cloud = trimesh.points.PointCloud(pcd[..., 0:3])
-                #             point_cloud.export(f'{args.output_path}/{base_uid}_pc.ply', "ply")
-                #             saved_base_uids.add(base_uid)
             else:
                 # Original logic for when run_parts is False
                 for var_idx in range(args.num_variations):
+                    local_bs = data['pc_normal'].shape[0]
                     for batch_idx in range(local_bs):
                         uid = data['uid'][batch_idx]
                         vertices = coords[local_bs * var_idx + batch_idx]
