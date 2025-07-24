@@ -6,7 +6,7 @@ import trimesh
 import numpy as np
 from model.serializaiton import BPT_deserialize
 from model.model import MeshTransformer
-from utils import joint_filter, Dataset
+from utils import joint_filter, Dataset, should_use_original_mesh, compute_chamfer_distance_mesh_to_mesh, decimate_mesh
 from model.data_utils import to_mesh
 from pathlib import Path
 from utils_folder.progress_tracker_client import checkpoint
@@ -25,6 +25,7 @@ parser.add_argument('--num_variations', type=int, default=1)
 parser.add_argument('--run_parts', type=bool, default=False)
 parser.add_argument('--temperature', type=float, default=0.5)  # key sampling parameter
 parser.add_argument('--condition', type=str, default='pc')
+parser.add_argument('--chamfer_threshold', type=float, default=0.01, help='Chamfer distance threshold for mesh quality comparison')
 args = parser.parse_args()
 
 
@@ -78,7 +79,7 @@ if __name__ == '__main__':
             input_list = [os.path.join(args.input_dir, x) for x in input_list if x.endswith('.npy')]
         else:
             # mesh file (e.g., obj, ply, glb)
-            input_list = [os.path.join(args.input_dir, x) for x in input_list if not (os.path.exists(os.path.join(args.output_path, Path(x).stem + f"_mesh_{args.batch_size - 1}.glb")) or os.path.exists(os.path.join(args.output_path, Path(x).stem + f"_mesh_{args.batch_size - 1}.obj")))]
+            input_list = [os.path.join(args.input_dir, x) for x in input_list] # if not (os.path.exists(os.path.join(args.output_path, Path(x).stem + f"_mesh_{args.batch_size - 1}.glb")) or os.path.exists(os.path.join(args.output_path, Path(x).stem + f"_mesh_{args.batch_size - 1}.obj")))]
         dataset = Dataset(args.input_type, input_list, args.run_parts)
 
     elif args.input_path is not None:
@@ -138,11 +139,43 @@ if __name__ == '__main__':
                         main_uid = data['main_uid'][batch_idx]
                         vertices = coords[local_bs * var_idx + batch_idx]
                         faces = torch.arange(1, len(vertices) + 1).view(-1, 3)
-                        mesh = to_mesh(vertices, faces, transpose=False, post_process=True)
+                        generated_mesh = to_mesh(vertices, faces, transpose=False, post_process=True)
                         
+                        # Quality check: compare generated mesh with original point cloud
+                        original_mesh = dataset.get_original_mesh(uid)
+                        # original_mesh.export('test_original_mesh.glb')
+                        # generated_mesh.export('test_generated_mesh.glb')
+                        use_original = should_use_original_mesh(generated_mesh, original_mesh, threshold=args.chamfer_threshold, num_samples=50000)
+
                         # Apply denormalization to restore original dimensions
                         if args.input_type == 'mesh':
-                            mesh = dataset.denormalize_mesh(mesh, uid)
+                            generated_mesh = dataset.denormalize_mesh(generated_mesh, uid)
+                        original_mesh = dataset.denormalize_mesh(original_mesh, uid)
+                        
+                        if use_original:
+                            # Use original mesh instead of generated one
+                            if original_mesh is not None:
+                                mesh = original_mesh.copy()
+                                current_chamfer_dist = 0.0
+                                while current_chamfer_dist < 0.015 and mesh.faces.shape[0] > 1000:
+                                    temp_mesh = mesh.copy()
+
+                                    mesh_res = int(0.5 * mesh.faces.shape[0])
+                                    mesh = decimate_mesh(mesh, target_fac=mesh_res)
+                                    
+                                    current_chamfer_dist = compute_chamfer_distance_mesh_to_mesh(mesh, original_mesh, 50000)
+                                    print("Decimated mesh again: ", current_chamfer_dist)
+                                mesh = temp_mesh
+
+                                chamfer_dist = compute_chamfer_distance_mesh_to_mesh(generated_mesh, mesh, 50000)
+                                logger.info(f"Using original mesh for {uid} (chamfer distance: {chamfer_dist:.6f} > {args.chamfer_threshold})")
+                            else:
+                                mesh = generated_mesh
+                                logger.warning(f"Original mesh not found for {uid}, using generated mesh")
+                        else:
+                            mesh = generated_mesh
+                            chamfer_dist = compute_chamfer_distance_mesh_to_mesh(generated_mesh, original_mesh, 50000)
+                            logger.info(f"Using generated mesh for {uid} (chamfer distance: {chamfer_dist:.6f} <= {args.chamfer_threshold})")
                         
                         # Extract base filename from uid (remove geometry part)
                         base_uid = main_uid

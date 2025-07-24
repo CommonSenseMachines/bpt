@@ -1,8 +1,11 @@
 import trimesh
 import numpy as np
 import subprocess
+import point_cloud_utils as pcu
 from x_transformers.autoregressive_wrapper import top_p, top_k
 from calculate_stats import calculate_stats
+import pymeshlab as pml
+import tempfile
 
 # --- Filter thresholds (adjust as needed) ---
 MIN_VOL_RATIO = 0.01      # Minimum 1% of total volume
@@ -17,6 +20,7 @@ class Dataset:
         super().__init__()
         self.data = []
         self.normalization_params = {}  # Store normalization parameters for each uid
+        self.original_meshes = {}  # Store original mesh data for quality comparison
         self.static_parts_map = []
         
         if input_type == 'pc_normal':
@@ -48,10 +52,16 @@ class Dataset:
                     
                     for geom_name, geom in cur_data.geometry.items():
                         if isinstance(geom, trimesh.Trimesh):  # Make sure it's a mesh
+                            # Store original mesh before normalization
+                            
                             geom, norm_params = apply_normalize(geom, return_params=True)
+                            original_mesh = geom.copy()
                             main_uid = input_path.split('/')[-1].split('.')[0]
                             uid = f"{input_path.split('/')[-1].split('.')[0]}_{geom_name}"
                             self.normalization_params[uid] = norm_params
+                            
+                            # Store original mesh data for quality comparison
+                            self.original_meshes[uid] = original_mesh
 
                             v = part_stats[geom_name]["volume"]
                             a = part_stats[geom_name]["area"]
@@ -66,9 +76,16 @@ class Dataset:
                                 pc_data = sample_pc_from_mesh(geom, pc_num=4096, with_normal=True)
                                 self.data.append({'pc_normal': pc_data, 'uid': uid, 'main_uid': main_uid})
                 else:  # It's a single mesh
+                    # Store original mesh before normalization
+                    original_mesh = cur_data.copy()
+                    
                     cur_data, norm_params = apply_normalize(cur_data, return_params=True)
                     uid = input_path.split('/')[-1].split('.')[0]
                     self.normalization_params[uid] = norm_params
+                    
+                    # Store original mesh data for quality comparison
+                    self.original_meshes[uid] = original_mesh
+                    
                     pc_data = sample_pc_from_mesh(cur_data, pc_num=4096, with_normal=True)
                     self.data.append({'pc_normal': pc_data, 'uid': uid, 'main_uid': uid})
                 
@@ -88,6 +105,10 @@ class Dataset:
     def get_normalization_params(self, uid):
         """Get normalization parameters for a specific uid"""
         return self.normalization_params.get(uid, None)
+    
+    def get_original_mesh(self, uid):
+        """Get original mesh for a specific uid"""
+        return self.original_meshes.get(uid, None)
     
     def denormalize_mesh(self, mesh, uid):
         """Denormalize a mesh using the stored normalization parameters"""
@@ -208,3 +229,132 @@ def sample_pc(mesh_path, pc_num, with_normal=False):
     return pc_normal
 
 
+def compute_chamfer_distance_mesh_to_pc(mesh, point_cloud, num_samples=4096):
+    """
+    Compute chamfer distance between a mesh and a point cloud.
+    
+    Args:
+        mesh: trimesh.Trimesh object
+        point_cloud: numpy array of shape (N, 3) or (N, 6) where first 3 columns are points
+        num_samples: number of points to sample from mesh for comparison
+    
+    Returns:
+        chamfer_distance: float value of chamfer distance
+    """
+    try:
+        # Sample points from the mesh
+        mesh_points, _ = mesh.sample(num_samples, return_index=True)
+        
+        # Extract just the point coordinates from point cloud (in case it has normals)
+        if point_cloud.shape[1] > 3:
+            pc_points = point_cloud[:, :3]
+        else:
+            pc_points = point_cloud
+        
+        # Compute chamfer distance using point_cloud_utils
+        chamfer_dist = pcu.chamfer_distance(np.array(mesh_points).astype(np.float32), pc_points.astype(np.float32))
+        
+        return chamfer_dist
+    except Exception as e:
+        print(f"Error computing chamfer distance: {e}")
+        return float('inf')  # Return high value on failure
+
+def compute_chamfer_distance_mesh_to_mesh(mesh1, mesh2, num_samples=4096):
+    """
+    Compute chamfer distance between a mesh and a point cloud.
+    
+    Args:
+        mesh: trimesh.Trimesh object
+        point_cloud: numpy array of shape (N, 3) or (N, 6) where first 3 columns are points
+        num_samples: number of points to sample from mesh for comparison
+    
+    Returns:
+        chamfer_distance: float value of chamfer distance
+    """
+    try:
+        # Sample points from the mesh
+        mesh_points1, _ = mesh1.sample(num_samples, return_index=True)
+        mesh_points2, _ = mesh2.sample(num_samples, return_index=True)
+        
+        # Compute chamfer distance using point_cloud_utils
+        chamfer_dist = pcu.chamfer_distance(mesh_points1, mesh_points2)
+        
+        return chamfer_dist
+    except Exception as e:
+        print(f"Error computing chamfer distance: {e}")
+        return float('inf')  # Return high value on failure
+
+
+def should_use_original_mesh(generated_mesh, original_mesh, threshold=0.01, num_samples=4096):
+    """
+    Determine if original mesh should be used instead of generated mesh
+    based on chamfer distance quality metric.
+    
+    Args:
+        generated_mesh: trimesh.Trimesh object of generated result
+        original_pc: numpy array of original point cloud
+        threshold: chamfer distance threshold above which to use original mesh
+    
+    Returns:
+        bool: True if original mesh should be used, False otherwise
+    """
+    chamfer_dist = compute_chamfer_distance_mesh_to_mesh(generated_mesh, original_mesh, num_samples)
+    return chamfer_dist > threshold
+
+def pymeshlab2trimesh(mesh: pml.MeshSet) -> trimesh.Trimesh:
+    with tempfile.NamedTemporaryFile(suffix='.ply', delete=True) as temp_file:
+        mesh.save_current_mesh(temp_file.name)
+        mesh = trimesh.load(temp_file.name)
+    
+    if isinstance(mesh, trimesh.Scene):
+        combined_mesh = trimesh.Trimesh()
+        for geom in mesh.geometry.values():
+            combined_mesh = trimesh.util.concatenate([combined_mesh, geom])
+        mesh = combined_mesh
+    return mesh
+
+def trimesh2pymeshlab(mesh: trimesh.Trimesh) -> pml.MeshSet:
+    with tempfile.NamedTemporaryFile(suffix='.ply', delete=True) as temp_file:
+        if isinstance(mesh, trimesh.scene.Scene):
+            for idx, obj in enumerate(mesh.geometry.values()):
+                if idx == 0:
+                    temp_mesh = obj
+                else:
+                    temp_mesh = temp_mesh + obj
+            mesh = temp_mesh
+        mesh.export(temp_file.name)
+        mesh = pml.MeshSet()
+        mesh.load_new_mesh(temp_file.name)
+    return mesh
+
+def decimate_mesh(inp_mesh, target_fac):
+    
+    mesh = trimesh2pymeshlab(inp_mesh)
+    
+    if target_fac is not None:
+        mesh.meshing_decimation_quadric_edge_collapse(
+            targetfacenum=target_fac,
+            qualitythr=1.0,
+            preserveboundary=True,
+            boundaryweight=3,
+            preservenormal=True,
+            preservetopology=True,
+            optimalplacement=True,
+            autoclean=True,
+        )
+    
+    return pymeshlab2trimesh(mesh)
+
+
+if __name__ == "__main__":
+    # mesh1 = trimesh.load("parts_test/ASSET_1750940402_5663604_flat.glb")
+    # mesh2 = trimesh.load("outputs_parts/ASSET_1750940402_5663604_mesh_0.glb")
+    # mesh1_keys = list(mesh1.geometry.keys())
+    # mesh2_keys = list(mesh2.geometry.keys())
+    # mesh1 = mesh1.geometry[mesh1_keys[0]]
+    # mesh2 = mesh2.geometry[mesh2_keys[0]]
+    mesh1 = trimesh.load("test_original_mesh.glb", force='mesh')
+    mesh2 = trimesh.load("monkey_dec_0.25.glb", force='mesh')
+    # breakpoint()
+    chamfer_dist = compute_chamfer_distance_mesh_to_mesh(mesh1, mesh2, 50000)
+    print(chamfer_dist)
