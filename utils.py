@@ -344,17 +344,3 @@ def decimate_mesh(inp_mesh, target_fac):
         )
     
     return pymeshlab2trimesh(mesh)
-
-
-if __name__ == "__main__":
-    # mesh1 = trimesh.load("parts_test/ASSET_1750940402_5663604_flat.glb")
-    # mesh2 = trimesh.load("outputs_parts/ASSET_1750940402_5663604_mesh_0.glb")
-    # mesh1_keys = list(mesh1.geometry.keys())
-    # mesh2_keys = list(mesh2.geometry.keys())
-    # mesh1 = mesh1.geometry[mesh1_keys[0]]
-    # mesh2 = mesh2.geometry[mesh2_keys[0]]
-    mesh1 = trimesh.load("test_original_mesh.glb", force='mesh')
-    mesh2 = trimesh.load("monkey_dec_0.25.glb", force='mesh')
-    # breakpoint()
-    chamfer_dist = compute_chamfer_distance_mesh_to_mesh(mesh1, mesh2, 50000)
-    print(chamfer_dist)
