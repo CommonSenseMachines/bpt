@@ -25,7 +25,7 @@ parser.add_argument('--num_variations', type=int, default=1)
 parser.add_argument('--run_parts', type=bool, default=False)
 parser.add_argument('--temperature', type=float, default=0.5)  # key sampling parameter
 parser.add_argument('--condition', type=str, default='pc')
-parser.add_argument('--chamfer_threshold', type=float, default=0.01, help='Chamfer distance threshold for mesh quality comparison')
+parser.add_argument('--chamfer_threshold', type=float, default=0.02, help='Chamfer distance threshold for mesh quality comparison')
 args = parser.parse_args()
 
 
