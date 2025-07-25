@@ -157,7 +157,7 @@ if __name__ == '__main__':
                             if original_mesh is not None:
                                 mesh = original_mesh.copy()
                                 current_chamfer_dist = 0.0
-                                while current_chamfer_dist < 0.015 and mesh.faces.shape[0] > 1000:
+                                while current_chamfer_dist < 0.012 and mesh.faces.shape[0] > 1000:
                                     temp_mesh = mesh.copy()
 
                                     mesh_res = int(0.5 * mesh.faces.shape[0])
@@ -219,6 +219,29 @@ if __name__ == '__main__':
             for var_idx in range(args.num_variations):
                 group_key = f"{main_uid}_var_{var_idx}"
                 part_id = uid.replace(main_uid + "_", '') if uid != main_uid else ''
+                mesh_groups[group_key].append((mesh, part_id, uid))
+
+        for decimate_part in dataset.decimate_meshes:
+            original_mesh = decimate_part['geo']
+            uid = decimate_part['uid']
+            main_uid = decimate_part['main_uid']
+            
+            mesh = original_mesh.copy()
+            current_chamfer_dist = 0.0
+            while current_chamfer_dist < 0.015 and mesh.faces.shape[0] > 1000:
+                temp_mesh = mesh.copy()
+
+                mesh_res = int(0.5 * mesh.faces.shape[0])
+                mesh = decimate_mesh(mesh, target_fac=mesh_res)
+                
+                current_chamfer_dist = compute_chamfer_distance_mesh_to_mesh(mesh, original_mesh, 75000)
+                print("Decimated mesh again: ", current_chamfer_dist)
+            mesh = temp_mesh
+
+            for var_idx in range(args.num_variations):
+                group_key = f"{main_uid}_var_{var_idx}"
+                part_id = uid.replace(main_uid + "_", '') if uid != main_uid else ''
+
                 mesh_groups[group_key].append((mesh, part_id, uid))
 
         if args.run_parts:

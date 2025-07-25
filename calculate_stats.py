@@ -2,6 +2,7 @@
 import sys
 import argparse
 import trimesh
+import point_cloud_utils as pcu
 
 # --- Filter thresholds (adjust as needed) ---
 MIN_VOL_RATIO = 0.01      # Minimum 1% of total volume
@@ -10,13 +11,14 @@ MIN_FACE_COUNT = 1000     # Or at least 1000 faces
 # --------------------------------------------
 
 def make_watertight(mesh: trimesh.Trimesh) -> trimesh.Trimesh:
+    from utils import apply_normalize
+    mesh = apply_normalize(mesh, return_params=False)
     if mesh.is_watertight and mesh.volume is not None:
         return mesh
     filled = mesh.copy()
-    filled.fill_holes()
-    if filled.is_watertight and filled.volume is not None:
-        return filled
-    return filled.convex_hull
+    v_watertight, f_watertight = pcu.make_mesh_watertight(filled.vertices, filled.faces, resolution=10_000)
+    wt_mesh = trimesh.Trimesh(v_watertight, f_watertight)
+    return wt_mesh
 
 def calculate_stats(path: str, verbose: bool = False) -> None:
     cur_data = trimesh.load(path, force='scene')
