@@ -157,7 +157,8 @@ if __name__ == '__main__':
                             if original_mesh is not None:
                                 mesh = original_mesh.copy()
                                 current_chamfer_dist = 0.0
-                                while current_chamfer_dist < 0.012 and mesh.faces.shape[0] > 1000:
+                                temp_mesh = mesh.copy()
+                                while current_chamfer_dist < 0.014 and mesh.faces.shape[0] > 1000:
                                     temp_mesh = mesh.copy()
 
                                     mesh_res = int(0.5 * mesh.faces.shape[0])
@@ -228,6 +229,7 @@ if __name__ == '__main__':
             
             mesh = original_mesh.copy()
             current_chamfer_dist = 0.0
+            temp_mesh = mesh.copy()
             while current_chamfer_dist < 0.015 and mesh.faces.shape[0] > 1000:
                 temp_mesh = mesh.copy()
 
