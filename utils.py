@@ -21,6 +21,7 @@ class Dataset:
         self.data = []
         self.normalization_params = {}  # Store normalization parameters for each uid
         self.original_meshes = {}  # Store original mesh data for quality comparison
+        self.decimate_meshes = []
         self.static_parts_map = []
         
         if input_type == 'pc_normal':
@@ -66,12 +67,15 @@ class Dataset:
                             v = part_stats[geom_name]["volume"]
                             a = part_stats[geom_name]["area"]
                             f = part_stats[geom_name]["faces"]
-                            v_ratio = v / total_volume
                             a_ratio = a / total_area
-                            process = (v_ratio > MIN_VOL_RATIO) or (a_ratio > MIN_AREA_RATIO) or (f >= MIN_FACE_COUNT)
+                            process = (a_ratio > MIN_AREA_RATIO) or (f >= MIN_FACE_COUNT)
                             if not process:
                                 geom = self.denormalize_mesh(geom, uid)
                                 self.static_parts_map.append({'geo': geom, 'uid': uid, 'main_uid': main_uid})
+                            elif v < 0.1:
+                                geom = self.denormalize_mesh(geom, uid)
+                                print(f"decimate mesh: {uid}")
+                                self.decimate_meshes.append({'geo': geom, 'uid': uid, 'main_uid': main_uid})
                             else:
                                 pc_data = sample_pc_from_mesh(geom, pc_num=4096, with_normal=True)
                                 self.data.append({'pc_normal': pc_data, 'uid': uid, 'main_uid': main_uid})
