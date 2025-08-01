@@ -268,7 +268,7 @@ if __name__ == '__main__':
                     for mesh, part_id, original_uid in mesh_data_list:
                         # Add each mesh as a named geometry in the scene
                         geometry_name = part_id
-                        scene.add_geometry(mesh, node_name=geometry_name)
+                        scene.add_geometry(mesh, node_name=geometry_name, geom_name=geometry_name)
                     
                     # Export scene as GLB (preserves individual parts)
                     scene.export(output_path_glb)
